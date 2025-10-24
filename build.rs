@@ -963,6 +963,28 @@ fn main() {
     let ffmpeg_major_version: u32 = env!("CARGO_PKG_VERSION_MAJOR").parse().unwrap();
 
     let sysroot = find_sysroot();
+
+    fn get_ffmpeg_dir() -> Option<String> {
+        if let Ok(target) = env::var("TARGET") {
+            let target_specific_env =
+                format!("FFMPEG_DIR_{}", target.to_uppercase().replace('-', "_"));
+            if let Ok(dir) = env::var(&target_specific_env) {
+                println!(
+                    "cargo:warning=Using target-specific FFMPEG_DIR from {}: {}",
+                    target_specific_env, dir
+                );
+                return Some(dir);
+            }
+        }
+
+        if let Ok(dir) = env::var("FFMPEG_DIR") {
+            println!("cargo:warning=Using generic FFMPEG_DIR: {}", dir);
+            return Some(dir);
+        }
+
+        None
+    }
+
     let include_paths: Vec<PathBuf> = if env::var("CARGO_FEATURE_BUILD").is_ok() {
         println!(
             "cargo:rustc-link-search=native={}",
@@ -1029,7 +1051,7 @@ fn main() {
         vec![search().join("include")]
     }
     // Use prebuilt library
-    else if let Ok(ffmpeg_dir) = env::var("FFMPEG_DIR") {
+    else if let Some(ffmpeg_dir) = get_ffmpeg_dir() {
         let ffmpeg_dir = PathBuf::from(ffmpeg_dir);
         if ffmpeg_dir.join("lib/amd64").exists()
             && env::var("CARGO_CFG_TARGET_ARCH").as_deref() == Ok("x86_64")
