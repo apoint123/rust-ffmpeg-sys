@@ -203,11 +203,15 @@ fn get_ffmpeg_target_os() -> String {
 /// Find the sysroot required for a cross compilation by ffmpeg **and** bindgen
 /// @see https://github.com/rust-lang/rust-bindgen/issues/1229
 fn find_sysroot() -> Option<String> {
-    if env::var("CARGO_FEATURE_BUILD").is_err() || env::var("HOST") == env::var("TARGET") {
+    if env::var("HOST") == env::var("TARGET") {
         return None;
     }
 
     if let Ok(sysroot) = env::var("SYSROOT") {
+        println!(
+            "cargo:warning=Using Android sysroot from SYSROOT: {}",
+            sysroot
+        );
         return Some(sysroot.to_string());
     }
 
@@ -233,16 +237,65 @@ fn find_sysroot() -> Option<String> {
     }
 
     if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("android") {
-        let sysroot_path = env::var("CARGO_NDK_SYSROOT_PATH").expect("Missing android sysroot path. For android cross compilation please use cargo-ndk which exposes all the required NDK paths throught env variables.");
-
-        if !Path::new(&sysroot_path).exists() {
-            panic!("Android sysroot path does not exists: {}", sysroot_path);
+        if let Ok(sysroot_path) = env::var("CARGO_NDK_SYSROOT_PATH") {
+            if Path::new(&sysroot_path).exists() {
+                println!(
+                    "cargo:warning=Using Android sysroot from CARGO_NDK_SYSROOT_PATH: {}",
+                    sysroot_path
+                );
+                return Some(sysroot_path);
+            } else {
+                println!(
+                    "cargo:warning=CARGO_NDK_SYSROOT_PATH is set but path does not exist: {}",
+                    sysroot_path
+                );
+            }
         }
 
-        return Some(sysroot_path);
+        if let Ok(ndk_home) = env::var("ANDROID_NDK_HOME") {
+            let host_tag = if cfg!(target_os = "linux") {
+                "linux-x86_64"
+            } else if cfg!(target_os = "windows") {
+                "windows-x86_64"
+            } else if cfg!(target_os = "macos") {
+                if cfg!(target_arch = "aarch64") {
+                    "darwin-aarch64"
+                } else {
+                    "darwin-x86_64"
+                }
+            } else {
+                "linux-x86_64"
+            };
+
+            let sysroot_path = PathBuf::from(ndk_home)
+                .join("toolchains")
+                .join("llvm")
+                .join("prebuilt")
+                .join(host_tag)
+                .join("sysroot");
+
+            if sysroot_path.exists() {
+                println!(
+                    "cargo:warning=Using Android sysroot from ANDROID_NDK_HOME: {}",
+                    sysroot_path.display()
+                );
+                return Some(sysroot_path.to_string_lossy().into_owned());
+            } else {
+                println!(
+                    "cargo:warning=Failed to find sysroot at inferred ANDROID_NDK_HOME path: {}",
+                    sysroot_path.display()
+                );
+            }
+        }
+
+        let panic_msg = "Missing Android sysroot path. Bindgen requires it. Please set CARGO_NDK_SYSROOT_PATH or ensure ANDROID_NDK_HOME is set correctly and points to the NDK root.";
+        panic!("{}", panic_msg);
     }
 
-    println!("cargo:warning=Detected cross compilation but sysroot not provided");
+    if env::var("CARGO_FEATURE_BUILD").is_ok() {
+        println!("cargo:warning=Detected cross compilation for non-android/non-ios target, but sysroot not provided. Build may fail.");
+    }
+
     None
 }
 
