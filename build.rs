@@ -161,7 +161,7 @@ fn fetch() -> io::Result<()> {
     let output_base_path = output();
     let clone_dest_dir = format!("ffmpeg-{}", version());
     let _ = std::fs::remove_dir_all(output_base_path.join(&clone_dest_dir));
-    let status = Command::new("git")
+    let fetch_output = Command::new("git")
         .current_dir(&output_base_path)
         .args(if cfg!(target_os = "windows") {
             vec!["-c", "core.autocrlf=false"]
@@ -174,12 +174,18 @@ fn fetch() -> io::Result<()> {
         .arg(format!("release/{}", version()))
         .arg("https://github.com/FFmpeg/FFmpeg")
         .arg(&clone_dest_dir)
-        .status()?;
+        .output()?;
 
-    if status.success() {
+    if fetch_output.status.success() {
         Ok(())
     } else {
-        Err(io::Error::other("fetch failed"))
+        panic!(
+            "Git fetch failed!\n\
+            ========== STDOUT ==========\n{}\n\
+            ========== STDERR ==========\n{}",
+            String::from_utf8_lossy(&fetch_output.stdout),
+            String::from_utf8_lossy(&fetch_output.stderr)
+        );
     }
 }
 
@@ -208,10 +214,6 @@ fn find_sysroot() -> Option<String> {
     }
 
     if let Ok(sysroot) = env::var("SYSROOT") {
-        println!(
-            "cargo:warning=Using Android sysroot from SYSROOT: {}",
-            sysroot
-        );
         return Some(sysroot.to_string());
     }
 
@@ -239,10 +241,6 @@ fn find_sysroot() -> Option<String> {
     if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("android") {
         if let Ok(sysroot_path) = env::var("CARGO_NDK_SYSROOT_PATH") {
             if Path::new(&sysroot_path).exists() {
-                println!(
-                    "cargo:warning=Using Android sysroot from CARGO_NDK_SYSROOT_PATH: {}",
-                    sysroot_path
-                );
                 return Some(sysroot_path);
             } else {
                 println!(
@@ -275,10 +273,6 @@ fn find_sysroot() -> Option<String> {
                 .join("sysroot");
 
             if sysroot_path.exists() {
-                println!(
-                    "cargo:warning=Using Android sysroot from ANDROID_NDK_HOME: {}",
-                    sysroot_path.display()
-                );
                 return Some(sysroot_path.to_string_lossy().into_owned());
             } else {
                 println!(
@@ -704,42 +698,49 @@ fn build(sysroot: Option<&str>) -> io::Result<()> {
     // run ./configure
     let output = configure
         .output()
-        .unwrap_or_else(|_| panic!("{:?} failed", configure));
-    if !output.status.success() {
-        println!(
-            "configure stdout: {}",
-            String::from_utf8_lossy(&output.stdout)
-        );
-        println!(
-            "configure stderr: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
+        .unwrap_or_else(|_| panic!("Failed to execute configure command: {:?}", configure));
 
-        return Err(io::Error::other(format!(
-            "configure failed {}",
+    if !output.status.success() {
+        panic!(
+            "FFmpeg configure failed!\n\
+            ========== STDOUT ==========\n{}\n\
+            ========== STDERR ==========\n{}",
+            String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
-        )));
+        );
     }
 
     // run make
-    if !Command::new("make")
+    let make_output = Command::new("make")
         .arg("-j")
         .arg(num_cpus::get().to_string())
         .current_dir(source())
-        .status()?
-        .success()
-    {
-        return Err(io::Error::other("make failed"));
+        .output()?;
+
+    if !make_output.status.success() {
+        panic!(
+            "FFmpeg 'make' failed!\n\
+            ========== STDOUT ==========\n{}\n\
+            ========== STDERR ==========\n{}",
+            String::from_utf8_lossy(&make_output.stdout),
+            String::from_utf8_lossy(&make_output.stderr)
+        );
     }
 
     // run make install
-    if !Command::new("make")
+    let make_install_output = Command::new("make")
         .current_dir(source())
         .arg("install")
-        .status()?
-        .success()
-    {
-        return Err(io::Error::other("make install failed"));
+        .output()?;
+
+    if !make_install_output.status.success() {
+        panic!(
+            "FFmpeg 'make install' failed!\n\
+            ========== STDOUT ==========\n{}\n\
+            ========== STDERR ==========\n{}",
+            String::from_utf8_lossy(&make_install_output.stdout),
+            String::from_utf8_lossy(&make_install_output.stderr)
+        );
     }
 
     Ok(())
@@ -850,16 +851,28 @@ fn check_features(
         compiler.arg("-I");
         compiler.arg(dir.to_string_lossy().into_owned());
     }
-    if !compiler
+
+    let compile_output = compiler
         .current_dir(&out_dir)
         .arg("-o")
         .arg(&executable)
         .arg("check.c")
-        .status()
-        .expect("Command failed")
-        .success()
-    {
-        panic!("Compile failed");
+        .output()
+        .expect("Command failed to execute");
+
+    if !compile_output.status.success() {
+        let stdout = String::from_utf8_lossy(&compile_output.stdout);
+        let stderr = String::from_utf8_lossy(&compile_output.stderr);
+
+        panic!(
+            "Failed to compile check.c!\n\
+            ========== STDOUT ==========\n\
+            {}\n\
+            ========== STDERR ==========\n\
+            {}\n\
+            ============================\n",
+            stdout, stderr
+        );
     }
 
     let check_output = Command::new(out_dir.join(&executable))
@@ -1023,16 +1036,11 @@ fn main() {
             let target_specific_env =
                 format!("FFMPEG_DIR_{}", target.to_uppercase().replace('-', "_"));
             if let Ok(dir) = env::var(&target_specific_env) {
-                println!(
-                    "cargo:warning=Using target-specific FFMPEG_DIR from {}: {}",
-                    target_specific_env, dir
-                );
                 return Some(dir);
             }
         }
 
         if let Ok(dir) = env::var("FFMPEG_DIR") {
-            println!("cargo:warning=Using generic FFMPEG_DIR: {}", dir);
             return Some(dir);
         }
 
