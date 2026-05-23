@@ -1238,8 +1238,8 @@ fn main() {
                 "Security",
                 "VideoToolbox",
             ];
-            for f in frameworks {
-                println!("cargo:rustc-link-lib=framework={f}");
+        for f in frameworks {
+            println!("cargo:rustc-link-lib=framework={f}");
             }
         }
     }
