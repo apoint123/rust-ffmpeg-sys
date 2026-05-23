@@ -1198,31 +1198,49 @@ fn main() {
     };
 
     if statik
-        && matches!(
-            env::var("CARGO_CFG_TARGET_OS").as_deref(),
-            Ok("macos") | Ok("ios")
-        )
-    {
-        let frameworks = vec![
-            "AppKit",
-            "AudioToolbox",
-            "AVFoundation",
-            "CoreFoundation",
-            "CoreGraphics",
-            "CoreMedia",
-            "CoreServices",
-            "CoreVideo",
-            "Foundation",
-            "OpenCL",
-            "OpenGL",
-            "QTKit",
-            "QuartzCore",
-            "Security",
-            "VideoDecodeAcceleration",
-            "VideoToolbox",
-        ];
+        let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+        if target_os == "macos" {
+
+            let frameworks = vec![
+                "AppKit",
+                "AudioToolbox",
+                "AVFoundation",
+                "CoreFoundation",
+                "CoreGraphics",
+                "CoreMedia",
+                "CoreServices",
+                "CoreVideo",
+                "Foundation",
+                "OpenCL",
+                "OpenGL",
+                "QTKit",
+                "QuartzCore",
+                "Security",
+                "VideoDecodeAcceleration",
+                "VideoToolbox",
+            ];
         for f in frameworks {
             println!("cargo:rustc-link-lib=framework={f}");
+        }
+    }
+        else if target_os == "iOS" {
+
+            let frameworks = vec![
+                "AudioToolbox",
+                "AVFoundation",
+                "CoreFoundation",
+                "CoreGraphics",
+                "CoreMedia",
+                "CoreServices",
+                "CoreVideo",
+                "Foundation",
+                "QuartzCore",
+                "Security",
+                "VideoToolbox",
+            ];
+            for f in frameworks {
+                println!("cargo:rustc-link-lib=framework={f}");
+            }
         }
     }
 
