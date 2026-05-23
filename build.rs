@@ -1199,8 +1199,8 @@ fn main() {
 
     if statik {
         let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
-        if target_os == "macos" {
-            let frameworks = vec![
+        let frameworks = match target_os.as_str() {
+            "macos" => vec![
                 "AppKit",
                 "AudioToolbox",
                 "AVFoundation",
@@ -1217,12 +1217,8 @@ fn main() {
                 "Security",
                 "VideoDecodeAcceleration",
                 "VideoToolbox",
-            ];
-            for f in frameworks {
-                println!("cargo:rustc-link-lib=framework={f}");
-            }
-        } else if target_os == "ios" {
-            let frameworks = vec![
+            ],
+            "ios" => vec![
                 "AudioToolbox",
                 "AVFoundation",
                 "CoreFoundation",
@@ -1234,10 +1230,12 @@ fn main() {
                 "QuartzCore",
                 "Security",
                 "VideoToolbox",
-            ];
-            for f in frameworks {
-                println!("cargo:rustc-link-lib=framework={f}");
-            }
+            ],
+            _ => vec![],
+        };
+
+        for f in frameworks {
+            println!("cargo:rustc-link-lib=framework={f}");
         }
     }
 
